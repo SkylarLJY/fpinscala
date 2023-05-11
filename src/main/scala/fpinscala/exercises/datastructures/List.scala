@@ -1,5 +1,7 @@
 package fpinscala.exercises.datastructures
 
+import fpinscala.answers.iomonad.BindTest.N
+
 /** `List` data type, parameterized on a type, `A`. */
 enum List[+A]:
   /** A `List` data constructor representing the empty list. */
@@ -47,46 +49,88 @@ object List: // `List` companion object. Contains functions for creating and wor
   def productViaFoldRight(ns: List[Double]): Double =
     foldRight(ns, 1.0, _ * _) // `_ * _` is more concise notation for `(x,y) => x * y`; see sidebar
 
-  def tail[A](l: List[A]): List[A] = ???
+  def tail[A](l: List[A]): List[A] = l match 
+    case Nil => Nil
+    case Cons(head, tail) => tail
 
-  def setHead[A](l: List[A], h: A): List[A] = ???
+  def setHead[A](l: List[A], h: A): List[A] = l match
+    case Nil => Nil
+    case Cons(head, tail) => Cons(h, tail)
+  
 
-  def drop[A](l: List[A], n: Int): List[A] = ???
+  def drop[A](l: List[A], n: Int): List[A] = 
+    if n==0 then l
+    else l match
+      case Nil => Nil
+      case Cons(head, tail) => drop(tail, n-1)
+    
+  def dropWhile[A](l: List[A], f: A => Boolean): List[A] = l match
+    case Nil => Nil
+    case Cons(head, tail) => if f(head) then dropWhile(tail, f) else Cons(head, dropWhile(tail, f))
+  
+  def init[A](l: List[A]): List[A] = l match
+    case Nil => Nil
+    case Cons(head, Nil) => Nil
+    case Cons(head, tail) => Cons(head, init(tail))
+  
 
-  def dropWhile[A](l: List[A], f: A => Boolean): List[A] = ???
+  def length[A](l: List[A]): Int = 
+    foldRight(l, 0, (a, b)=>b+1)
+  
 
-  def init[A](l: List[A]): List[A] = ???
+  def foldLeft[A,B](l: List[A], acc: B, f: (B, A) => B): B = l match
+    case Nil => acc
+    case Cons(head, tail) => foldLeft(tail, f(acc, head), f)
+  
 
-  def length[A](l: List[A]): Int = ???
+  def sumViaFoldLeft(ns: List[Int]): Int = foldLeft(ns, 0, _+_)
 
-  def foldLeft[A,B](l: List[A], acc: B, f: (B, A) => B): B = ???
+  def productViaFoldLeft(ns: List[Double]): Double = foldLeft(ns, 1.0, _*_)
 
-  def sumViaFoldLeft(ns: List[Int]): Int = ???
+  def lengthViaFoldLeft[A](l: List[A]): Int = foldLeft(l, 0, (acc, _)=>acc+1)
 
-  def productViaFoldLeft(ns: List[Double]): Double = ???
 
-  def lengthViaFoldLeft[A](l: List[A]): Int = ???
+  def reverse[A](l: List[A]): List[A] = 
+    foldLeft(l, List[A](), (acc, a)=>Cons(a,acc))
 
-  def reverse[A](l: List[A]): List[A] = ???
+  def flodRightViaFoldLeft[A,B](l: List[A], acc: B, f: (A, B)=>B): B = 
+    foldLeft(reverse(l), acc, (b, a)=>f(a, b))
 
-  def appendViaFoldRight[A](l: List[A], r: List[A]): List[A] = ???
 
-  def concat[A](l: List[List[A]]): List[A] = ???
+  def appendViaFoldRight[A](l: List[A], r: List[A]): List[A] = foldRight(l ,r, Cons(_, _))
 
-  def incrementEach(l: List[Int]): List[Int] = ???
+  def concat[A](l: List[List[A]]): List[A] = foldRight(l, List[A](), append)
+  
 
-  def doubleToString(l: List[Double]): List[String] = ???
+  def incrementEach(l: List[Int]): List[Int] = foldRight(l, Nil: List[Int], (a, b)=>Cons(a+1, b))
 
-  def map[A,B](l: List[A], f: A => B): List[B] = ???
+  def doubleToString(l: List[Double]): List[String] = foldRight(l, Nil: List[String], (a, b)=>Cons(a.toString, b))
 
-  def filter[A](as: List[A], f: A => Boolean): List[A] = ???
+  def map[A,B](l: List[A], f: A => B): List[B] = foldRight(l, Nil: List[B], (a, b)=>Cons(f(a), b))
 
-  def flatMap[A,B](as: List[A], f: A => List[B]): List[B] = ???
+  def filter[A](as: List[A], f: A => Boolean): List[A] = 
+    foldRight(as, Nil: List[A], (a, b)=>if f(a) then Cons(a, b) else b)
 
-  def filterViaFlatMap[A](as: List[A], f: A => Boolean): List[A] = ???
+  def flatMap[A,B](as: List[A], f: A => List[B]): List[B] = concat(map(as, f))
 
-  def addPairwise(a: List[Int], b: List[Int]): List[Int] = ???
+  def filterViaFlatMap[A](as: List[A], f: A => Boolean): List[A] = 
+    flatMap(as, a=>if f(a) then Cons(a, Nil) else Nil)
+
+  def addPairwise(a: List[Int], b: List[Int]): List[Int] = flatMap(a, numA=>map(b, numB=>numA+numB))
 
   // def zipWith - TODO determine signature
+  def zipWith[A, B, C](l1: List[A], l2: List[B], f: (A, B)=>C): List[C] = (l1, l2) match
+    case (Nil, _) => Nil
+    case (_, Nil) => Nil
+    case (Cons(x, xs), Cons(y, ys)) => Cons(f(x, y), zipWith(xs, ys, f))
 
-  def hasSubsequence[A](sup: List[A], sub: List[A]): Boolean = ???
+
+  def seqMatch[A](seq1: List[A], seq2: List[A]): Boolean = (seq1, seq2) match
+    case (_, Nil) => true
+    case (Cons(n, ns), Cons(m, ms)) if n==m => seqMatch(ns, ms)
+    case _ => false
+
+  def hasSubsequence[A](sup: List[A], sub: List[A]): Boolean = sup match
+      case Nil => sub == Nil
+      case _ if seqMatch(sup, sub) => true
+      case Cons(x, xs) => hasSubsequence(xs, sub)
