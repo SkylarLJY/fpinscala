@@ -8,18 +8,31 @@ enum Either[+E,+A]:
   case Left(get: E)
   case Right(get: A)
 
-  def map[B](f: A => B): Either[E, B] = ???
+  def map[B](f: A => B): Either[E, B] = this match
+    case Left(e) => Left(e)
+    case Right(a) => Right(f(a))
+  
 
-  def flatMap[EE >: E, B](f: A => Either[EE, B]): Either[EE, B] = ???
+  def flatMap[EE >: E, B](f: A => Either[EE, B]): Either[EE, B] = this match
+    case Left(e) => Left(e)
+    case Right(a) => f(a)
+  
+  def orElse[EE >: E, B >: A](b: => Either[EE, B]): Either[EE, B] = this match
+    case Left(_) => b
+    case Right(a) => Right(a)
 
-  def orElse[EE >: E, B >: A](b: => Either[EE, B]): Either[EE, B] = ???
-
-  def map2[EE >: E, B, C](b: Either[EE, B])(f: (A, B) => C): Either[EE, C] = ???
+  def map2[EE >: E, B, C](b: Either[EE, B])(f: (A, B) => C): Either[EE, C] = 
+    for 
+      aa <- this
+      bb <- b
+    yield f(aa, bb)
 
 object Either:
-  def traverse[E,A,B](es: List[A])(f: A => Either[E, B]): Either[E, List[B]] = ???
+  def traverse[E,A,B](es: List[A])(f: A => Either[E, B]): Either[E, List[B]] = 
+    es.foldRight[Either[E, List[B]]](Right(Nil))((a, acc) => f(a).map2(acc)(_::_))
 
-  def sequence[E,A](es: List[Either[E,A]]): Either[E,List[A]] = ???
+  def sequence[E,A](es: List[Either[E,A]]): Either[E,List[A]] = 
+    traverse(es)(a=>a)
 
   def mean(xs: IndexedSeq[Double]): Either[String, Double] = 
     if xs.isEmpty then
