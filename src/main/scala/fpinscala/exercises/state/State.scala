@@ -1,5 +1,7 @@
 package fpinscala.exercises.state
 
+import javax.crypto.Mac
+
 
 trait RNG:
   def nextInt: (Int, RNG) // Should generate a random `Int`. We'll later define other functions in terms of `nextInt`.
@@ -26,27 +28,64 @@ object RNG:
       val (a, rng2) = s(rng)
       (f(a), rng2)
 
-  def nonNegativeInt(rng: RNG): (Int, RNG) = ???
+  def nonNegativeInt(rng: RNG): (Int, RNG) = 
+    val (n, rng1) = rng.nextInt
+    (if n<0 then -(n+1) else n, rng1)
 
-  def double(rng: RNG): (Double, RNG) = ???
+  def double(rng: RNG): (Double, RNG) = 
+    val (n, r) = nonNegativeInt(rng)
+    (n.toDouble / Int.MaxValue.toDouble+1, r)
 
-  def intDouble(rng: RNG): ((Int,Double), RNG) = ???
+  def doubleMap: Rand[Double] = 
+    map(nonNegativeInt)(_.toDouble/Int.MaxValue.toDouble+1)
 
-  def doubleInt(rng: RNG): ((Double,Int), RNG) = ???
+  def intDouble(rng: RNG): ((Int,Double), RNG) = 
+    val (i, r1) = rng.nextInt
+    val (d, r2) = double(r1)
+    ((i, d), r2)
 
-  def double3(rng: RNG): ((Double,Double,Double), RNG) = ???
+  def doubleInt(rng: RNG): ((Double,Int), RNG) = 
+    val ((i, d), r) = intDouble(rng)
+    ((d, i), r)
 
-  def ints(count: Int)(rng: RNG): (List[Int], RNG) = ???
+  def double3(rng: RNG): ((Double,Double,Double), RNG) = 
+    val (d1, r1) = double(rng)
+    val (d2, r2) = double(r1)
+    val (d3, r3) = double(r2)
+    ((d1, d2, d3), r3)
 
-  def map2[A, B, C](ra: Rand[A], rb: Rand[B])(f: (A, B) => C): Rand[C] = ???
+  def ints(count: Int)(rng: RNG): (List[Int], RNG) = 
+    if count == 0 then (Nil, rng)
+    else 
+      val (i, r) = rng.nextInt
+      val (l, r1) = ints(count-1)(r)
+      (i :: l, r1)
 
-  def sequence[A](rs: List[Rand[A]]): Rand[List[A]] = ???
+  def intsTR(count: Int)(rng: RNG): (List[Int], RNG) = 
+    def go(cnt: Int, acc: List[Int], rng: RNG): (List[Int], RNG) = 
+      if cnt == 0 then (acc, rng) 
+      else 
+        val (i, r) = rng.nextInt
+        go(count-1, i::acc, r)
+    go(count, List(), rng)
+     
 
-  def flatMap[A, B](r: Rand[A])(f: A => Rand[B]): Rand[B] = ???
+  def map2[A, B, C](ra: Rand[A], rb: Rand[B])(f: (A, B) => C): Rand[C] = 
+    rng =>
+      val (a, r1) = ra(rng)
+      val (b, r2) = rb(r1)
+      (f(a, b), r2)
 
-  def mapViaFlatMap[A, B](r: Rand[A])(f: A => B): Rand[B] = ???
+  def sequence[A](rs: List[Rand[A]]): Rand[List[A]] = 
+    rs.foldRight(unit(Nil: List[A]))((r, acc) => map2(r, acc)(_::_))
 
-  def map2ViaFlatMap[A, B, C](ra: Rand[A], rb: Rand[B])(f: (A, B) => C): Rand[C] = ???
+  def flatMap[A, B](r: Rand[A])(f: A => Rand[B]): Rand[B] = rng => 
+    val (a, r1) = r(rng)
+    f(a)(r1)
+
+  def mapViaFlatMap[A, B](r: Rand[A])(f: A => B): Rand[B] = flatMap(r)(a => unit(f(a)))
+
+  def map2ViaFlatMap[A, B, C](ra: Rand[A], rb: Rand[B])(f: (A, B) => C): Rand[C] = flatMap(ra)(a=>flatMap(rb)(b=>unit(f(a,b))))
 
 opaque type State[S, +A] = S => (A, S)
 
@@ -55,13 +94,20 @@ object State:
     def run(s: S): (A, S) = underlying(s)
 
     def map[B](f: A => B): State[S, B] =
-      ???
+      s => 
+        val (a, s1) = underlying(s)
+        (f(a), s1)
 
-    def map2[B, C](sb: State[S, B])(f: (A, B) => C): State[S, C] =
-      ???
+    def map2[B, C](sb: State[S, B])(f: (A, B) => C): State[S, C] = s => 
+      val (a, s1) = underlying(s)
+      val (b, s2) = sb.run(s1)
+      (f(a,b), s2)  
+      
 
     def flatMap[B](f: A => State[S, B]): State[S, B] =
-      ???
+      s => 
+        val (a, s1) = underlying(s)
+        f(a)(s1)
 
   def apply[S, A](f: S => (A, S)): State[S, A] = f
 
@@ -71,4 +117,18 @@ enum Input:
 case class Machine(locked: Boolean, candies: Int, coins: Int)
 
 object Candy:
-  def simulateMachine(inputs: List[Input]): State[Machine, (Int, Int)] = ???
+  // Machine => ((Int, Int), Machine)
+  def simulateMachine(inputs: List[Input]): State[Machine, (Int, Int)] = State.apply(
+    m => 
+      val fin = inputs.foldLeft(m)(handle)
+      ((fin.coins, fin.candies), fin)
+  )
+  
+  def handle(m: Machine, i: Input): Machine = (i, m) match
+    case (Input.Coin, Machine(true, candy, coin)) => Machine(false, candy, coin+1) 
+    case (Input.Turn, Machine(false, candy, coin)) if candy>0 => Machine(true, candy-1, coin)
+    case _ => m
+  
+  
+  
+  
