@@ -135,7 +135,7 @@ object LazyList:
   def from(n: Int): LazyList[Int] = cons(n, from(n+1))
 
   lazy val fibs: LazyList[Int] = 
-    def func(n1: Int, n2: Int): LazyList[Int] = cons(n1, func(n1, n1+n2))
+    def func(n1: Int, n2: Int): LazyList[Int] = cons(n1, func(n2, n1+n2))
     func(0,1) 
      
 

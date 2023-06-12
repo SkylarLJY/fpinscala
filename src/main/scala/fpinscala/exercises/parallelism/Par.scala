@@ -9,7 +9,7 @@ object Par:
 
   def unit[A](a: A): Par[A] =
     es => UnitFuture(a) // `unit` is represented as a function that returns a `UnitFuture`, which is a simple implementation of `Future` that just wraps a constant value. It doesn't use the `ExecutorService` at all. It's always done and can't be cancelled. Its `get` method simply returns the value that we gave it.
-
+  // def map2[A, B, C](x: Par[A], y: Par[B])(f: (A, B)=>C): Par[C] = ???
   private case class UnitFuture[A](get: A) extends Future[A]:
     def isDone = true
     def get(timeout: Long, units: TimeUnit) = get
@@ -82,6 +82,7 @@ object Par:
       sequenceBalanced(l).map2(sequenceBalanced(r))(_ ++ _)
 
   def sequence[A](pas: List[Par[A]]): Par[List[A]] =
+    // pas.foldRight(unit(List[A]()))((pa, acc)=>pa.map2(acc)(_::_))
     sequenceBalanced(pas.toIndexedSeq).map(_.toList)
 
   def parMap[A, B](ps: List[A])(f: A => B): Par[List[B]] = fork:
@@ -89,9 +90,9 @@ object Par:
     sequence(fbs)
 
   def parFilter[A](l: List[A])(f: A => Boolean): Par[List[A]] = fork:
-    val pars: List[Par[List[A]]] =
-      l.map(asyncF(a => if f(a) then List(a) else List()))
-    sequence(pars).map(_.flatten) // convenience method on `List` for concatenating a list of lists
+    // unit(l).map2(unit(()))((la, _) => la.filter(f))
+    val pars: List[Par[List[A]]] = l.map(asyncF(a => if f(a) then List(a) else List()))
+    sequence(pars).map(_.flatten)
 
   def equal[A](e: ExecutorService)(p: Par[A], p2: Par[A]): Boolean =
     p(e).get == p2(e).get
@@ -106,22 +107,21 @@ object Par:
 
   def choiceN[A](n: Par[Int])(choices: List[Par[A]]): Par[A] =
     es =>
-      val ind = n.run(es).get // Full source files
-      choices(ind).run(es)
-
+      val i = n.run(es).get % choices.size 
+      choices(i).run(es)
+  
   def choiceViaChoiceN[A](a: Par[Boolean])(ifTrue: Par[A], ifFalse: Par[A]): Par[A] =
-    choiceN(a.map(b => if b then 0 else 1))(List(ifTrue, ifFalse))
+    choiceN(a.map(b => if b then 1 else 0))(List(ifFalse, ifTrue))
 
   def choiceMap[K, V](key: Par[K])(choices: Map[K,Par[V]]): Par[V] =
     es =>
-      val k = key.run(es).get
+      val k = key.run(es).get 
       choices(k).run(es)
 
   extension [A](pa: Par[A]) def chooser[B](choices: A => Par[B]): Par[B] =
     es =>
-      val k = pa.run(es).get
-      choices(k).run(es)
-
+      val x = pa.run(es).get
+      choices(x).run(es)
   /* `chooser` is usually called `flatMap` or `bind`. */
   extension [A](pa: Par[A]) def flatMap[B](choices: A => Par[B]): Par[B] =
     es =>
@@ -136,14 +136,16 @@ object Par:
 
   // see nonblocking implementation in `Nonblocking.scala`
   def join[A](a: Par[Par[A]]): Par[A] =
-    es => a.run(es).get().run(es)
+    es => a.run(es).get.run(es)
 
   def joinViaFlatMap[A](a: Par[Par[A]]): Par[A] =
-    flatMap(a)(x => x)
+    a.flatMap(identity)
 
+  extension [A](pa: Par[A]) def map2ViaFlatMap[B, C](pb: Par[B])(f: (A, B) => C): Par[C] = 
+    pa.flatMap(a => pb.map(b => f(a, b)))
+    
   extension [A](pa: Par[A]) def flatMapViaJoin[B](f: A => Par[B]): Par[B] =
     join(pa.map(f))
-
 object Examples:
   import Par.*
   def sum(ints: IndexedSeq[Int]): Int = // `IndexedSeq` is a superclass of random-access sequences like `Vector` in the standard library. Unlike lists, these sequences provide an efficient `splitAt` method for dividing them into two parts at a particular index.
@@ -152,3 +154,19 @@ object Examples:
     else
       val (l, r) = ints.splitAt(ints.size / 2) // Divide the sequence in half using the `splitAt` function.
       sum(l) + sum(r) // Recursively sum both halves and add the results together.
+
+  def parSum(ints: IndexedSeq[Int]): Par[Int] = parOp(ints, 0)(_+_)
+
+  def parMax(ints: IndexedSeq[Int]): Par[Int] = parOp(ints, 0)(_ max _)
+
+  def parOp[A](isa: IndexedSeq[A], init: A)(f: (A, A)=>A): Par[A] = fork:
+    if isa.length <= 1 then
+      unit(isa.headOption.getOrElse(init))
+    else 
+      val (l, r) = isa.splitAt(isa.length/2)
+      parOp(l, init)(f).map2(parOp(r, init)(f))(f)
+
+  def parWordCount(ps: List[String]): Par[Int] = 
+    def count(p: String): Int = p.split(" ").length
+    val resList = parMap(ps)(count)
+    resList.map(p => p.sum)
